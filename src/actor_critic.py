@@ -33,18 +33,21 @@ class Actor(nn.Module):
         self.hidden_dim = hidden_dim
 
         self.fc1 = nn.Linear(obs_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, act_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc3 = nn.Linear(hidden_dim, act_dim)
 
         self.apply(init_weights)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass returns action logits."""
         x = F.relu(self.fc1(x))
-        return self.fc2(x)
+        x = F.relu(self.fc2(x))
+        return self.fc3(x)
 
     def get_hidden(self, x: torch.Tensor) -> torch.Tensor:
         """Get hidden layer activations (for progressive networks)."""
-        return F.relu(self.fc1(x))
+        x = F.relu(self.fc1(x))
+        return F.relu(self.fc2(x))
 
     def get_action(self, state: np.ndarray, valid_actions: List[int] = None) -> Tuple[int, torch.Tensor]:
         """
@@ -97,18 +100,21 @@ class Critic(nn.Module):
         self.hidden_dim = hidden_dim
 
         self.fc1 = nn.Linear(obs_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, 1)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc3 = nn.Linear(hidden_dim, 1)
 
         self.apply(init_weights)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass returns state value."""
         x = F.relu(self.fc1(x))
-        return self.fc2(x)
+        x = F.relu(self.fc2(x))
+        return self.fc3(x)
 
     def get_hidden(self, x: torch.Tensor) -> torch.Tensor:
         """Get hidden layer activations (for progressive networks)."""
-        return F.relu(self.fc1(x))
+        x = F.relu(self.fc1(x))
+        return F.relu(self.fc2(x))
 
 
 class ActorCritic(nn.Module):
@@ -211,6 +217,7 @@ class ActorCriticTrainer:
         log_probs = []
         values = []
         rewards = []
+        entropies = []
         done = False
         steps = 0
 
@@ -223,6 +230,11 @@ class ActorCriticTrainer:
             values.append(value)
             rewards.append(reward)
 
+            # Compute entropy for this state
+            state_tensor = torch.FloatTensor(state).unsqueeze(0).to(DEVICE)
+            entropy = self.model.actor.get_entropy(state_tensor, self.valid_actions)
+            entropies.append(entropy)
+
             state = next_state
             steps += 1
 
@@ -233,16 +245,17 @@ class ActorCriticTrainer:
         log_probs = torch.stack(log_probs)
         values = torch.stack(values)
 
-        # Compute advantages
+        # Compute advantages and normalize
         advantages = returns - values.detach()
+        if len(advantages) > 1:
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         # Compute losses
         actor_loss = -(log_probs * advantages).mean()
         critic_loss = F.mse_loss(values, returns)
 
-        # Entropy bonus for exploration
-        state_tensor = torch.FloatTensor(state).unsqueeze(0).to(DEVICE)
-        entropy = self.model.actor.get_entropy(state_tensor, self.valid_actions)
+        # Entropy bonus (average over trajectory)
+        entropy = torch.stack(entropies).mean()
 
         # Total loss
         loss = actor_loss + self.config.value_loss_coef * critic_loss - self.config.entropy_coef * entropy
