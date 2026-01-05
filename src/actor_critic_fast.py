@@ -67,7 +67,7 @@ class ActorCriticFast(nn.Module):
         action = dist.sample()
         log_prob = dist.log_prob(action)
 
-        return action.item(), log_prob, value.squeeze()
+        return action.item(), log_prob.squeeze(), value.squeeze()
 
     def evaluate_actions(self, states: torch.Tensor, actions: torch.Tensor,
                          valid_actions: List[int] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

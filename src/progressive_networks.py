@@ -190,7 +190,7 @@ class ProgressiveActorCritic(nn.Module):
         action = dist.sample()
         log_prob = dist.log_prob(action)
 
-        return action.item(), log_prob, value.squeeze()
+        return action.item(), log_prob.squeeze(), value.squeeze()
 
     def get_entropy(self, state: torch.Tensor, valid_actions: List[int] = None) -> torch.Tensor:
         """Compute entropy of the policy distribution."""
