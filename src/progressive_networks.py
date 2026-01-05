@@ -275,6 +275,7 @@ class ProgressiveNetworkTrainer:
         log_probs = []
         values = []
         rewards = []
+        entropies = []
         done = False
         steps = 0
 
@@ -287,6 +288,11 @@ class ProgressiveNetworkTrainer:
             values.append(value)
             rewards.append(reward)
 
+            # Compute entropy for this state
+            state_tensor = torch.FloatTensor(state).unsqueeze(0).to(DEVICE)
+            entropy = self.model.get_entropy(state_tensor, self.valid_actions)
+            entropies.append(entropy)
+
             state = next_state
             steps += 1
 
@@ -297,16 +303,17 @@ class ProgressiveNetworkTrainer:
         log_probs = torch.stack(log_probs)
         values = torch.stack(values)
 
-        # Compute advantages
+        # Compute advantages and normalize
         advantages = returns - values.detach()
+        if len(advantages) > 1:
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         # Compute losses
         actor_loss = -(log_probs * advantages).mean()
         critic_loss = F.mse_loss(values, returns)
 
-        # Entropy bonus
-        state_tensor = torch.FloatTensor(state).unsqueeze(0).to(DEVICE)
-        entropy = self.model.get_entropy(state_tensor, self.valid_actions)
+        # Entropy bonus (average over trajectory)
+        entropy = torch.stack(entropies).mean()
 
         # Total loss
         loss = actor_loss + self.config.value_loss_coef * critic_loss - self.config.entropy_coef * entropy

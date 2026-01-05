@@ -93,7 +93,7 @@ def create_tensorboard_writer(experiment_name: str) -> SummaryWriter:
     return SummaryWriter(log_dir=log_dir)
 
 
-def compute_returns(rewards: list, gamma: float, normalize: bool = True) -> torch.Tensor:
+def compute_returns(rewards: list, gamma: float, normalize: bool = False) -> torch.Tensor:
     """Compute discounted returns."""
     returns = []
     R = 0
