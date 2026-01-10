@@ -8,6 +8,7 @@ from .actor_critic import ActorCritic, ActorCriticTrainer, train_individual_netw
 from .actor_critic_fast import ActorCriticFast, FastTrainer, train_fast
 from .fine_tuning import fine_tune, run_section2_experiments
 from .progressive_networks import train_progressive_network, run_section3_experiments
+from .sb3_baseline import train_sb3_baseline, run_all_baselines, compare_with_custom, evaluate_sb3_model
 
 __all__ = [
     'TrainingConfig',
@@ -27,4 +28,8 @@ __all__ = [
     'run_section2_experiments',
     'train_progressive_network',
     'run_section3_experiments',
+    'train_sb3_baseline',
+    'run_all_baselines',
+    'compare_with_custom',
+    'evaluate_sb3_model',
 ]
