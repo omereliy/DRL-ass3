@@ -220,13 +220,14 @@ class FineTuningTrainer:
 
     def save_model(self, path: str = None):
         """Save model to disk."""
+        from dataclasses import asdict
         if path is None:
             path = get_model_path(f"finetuned_{self.source_env_name}_to_{self.target_env_name}")
 
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
-            'config': self.config,
+            'config': asdict(self.config),  # Convert to dict to avoid pickling issues
             'source_env': self.source_env_name,
             'target_env': self.target_env_name,
         }, path)

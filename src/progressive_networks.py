@@ -415,10 +415,11 @@ class ProgressiveNetworkTrainer:
             target = self.target_env_name.split("-")[0]
             path = get_model_path(f"progressive_{sources}_to_{target}")
 
+        from dataclasses import asdict
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
-            'config': self.config,
+            'config': asdict(self.config),  # Convert to dict to avoid pickling issues
             'source_envs': self.source_env_names,
             'target_env': self.target_env_name,
         }, path)

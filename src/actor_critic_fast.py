@@ -350,10 +350,11 @@ class FastTrainer:
         if path is None:
             path = get_model_path(self.env_name)
 
+        from dataclasses import asdict
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
-            'config': self.config,
+            'config': asdict(self.config),  # Convert to dict to avoid pickling issues
             'env_name': self.env_name,
         }, path)
         print(f"Model saved to {path}")

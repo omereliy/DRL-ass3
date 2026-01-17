@@ -343,13 +343,14 @@ class ActorCriticTrainer:
 
     def save_model(self, path: str = None):
         """Save model to disk."""
+        from dataclasses import asdict
         if path is None:
             path = get_model_path(self.env.env_name)
 
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
-            'config': self.config,
+            'config': asdict(self.config),  # Convert to dict to avoid pickling issues
             'env_name': self.env.env_name,
         }, path)
         print(f"Model saved to {path}")
