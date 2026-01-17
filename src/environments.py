@@ -91,12 +91,29 @@ class StandardizedEnv:
             # Discretize to: left (-1), nothing (0), right (1)
             self.discrete_actions = [-1.0, 0.0, 1.0]
 
+        # Reward shaping state for MountainCarContinuous
+        self._max_position = -float('inf')
+        self._prev_position = None
+
+        # Reward shaping state for Acrobot
+        self._max_tip_height = -float('inf')
+
     def reset(self, seed: Optional[int] = None) -> np.ndarray:
         """Reset environment and return padded observation."""
         if seed is not None:
             obs, _ = self.env.reset(seed=seed)
         else:
             obs, _ = self.env.reset()
+
+        # Reset reward shaping state for MountainCarContinuous
+        if self.env_name == "MountainCarContinuous-v0":
+            self._max_position = obs[0]  # Initial position
+            self._prev_position = obs[0]
+
+        # Reset reward shaping state for Acrobot
+        if self.env_name == "Acrobot-v1":
+            self._max_tip_height = self._compute_acrobot_tip_height(obs)
+
         return self._pad_observation(obs)
 
     def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict]:
@@ -114,7 +131,90 @@ class StandardizedEnv:
 
         obs, reward, terminated, truncated, info = self.env.step(env_action)
 
+        # Apply reward shaping for MountainCarContinuous
+        if self.env_name == "MountainCarContinuous-v0":
+            reward = self._shape_mountaincar_reward(obs, reward, terminated)
+
+        # Apply reward shaping for Acrobot
+        if self.env_name == "Acrobot-v1":
+            reward = self._shape_acrobot_reward(obs, reward, terminated)
+
         return self._pad_observation(obs), reward, terminated, truncated, info
+
+    def _compute_acrobot_tip_height(self, obs: np.ndarray) -> float:
+        """
+        Compute the height of the Acrobot tip from the observation.
+
+        Acrobot observation:
+        - obs[0]: cos(theta1)
+        - obs[1]: sin(theta1)
+        - obs[2]: cos(theta2)
+        - obs[3]: sin(theta2)
+        - obs[4]: angular velocity of link 1
+        - obs[5]: angular velocity of link 2
+
+        The tip height is computed as: -cos(theta1) - cos(theta1 + theta2)
+        Link lengths are both 1.0 in the environment.
+        """
+        cos_theta1 = obs[0]
+        sin_theta1 = obs[1]
+        cos_theta2 = obs[2]
+        sin_theta2 = obs[3]
+
+        # cos(theta1 + theta2) = cos(theta1)*cos(theta2) - sin(theta1)*sin(theta2)
+        cos_theta1_plus_theta2 = cos_theta1 * cos_theta2 - sin_theta1 * sin_theta2
+
+        # Height of tip (goal is height > 1.0, which means tip is above the base)
+        # Height = -cos(theta1) - cos(theta1 + theta2)
+        tip_height = -cos_theta1 - cos_theta1_plus_theta2
+
+        return tip_height
+
+    def _shape_acrobot_reward(self, obs: np.ndarray, original_reward: float,
+                               terminated: bool) -> float:
+        """
+        Apply reward shaping for Acrobot.
+
+        DISABLED: Previous exponential bonuses created massive reward variance
+        that destabilized value learning. Raw -1 per step reward is sufficient
+        with proper network capacity (256 hidden units).
+        """
+        # Use raw environment reward (-1 per step until goal reached)
+        return original_reward
+
+    def _shape_mountaincar_reward(self, obs: np.ndarray, original_reward: float,
+                                   terminated: bool) -> float:
+        """
+        Apply reward shaping for MountainCarContinuous.
+
+        Pure Potential-Based Reward Shaping (PBRS):
+        R'(s,a,s') = R(s,a,s') + gamma * Phi(s') - Phi(s)
+
+        This preserves the optimal policy while providing a denser reward signal
+        to aid exploration in this sparse-reward environment.
+
+        MountainCarContinuous state:
+        - obs[0]: position (range: -1.2 to 0.6, goal: >= 0.45)
+        - obs[1]: velocity (range: -0.07 to 0.07)
+        """
+        position = obs[0]
+        gamma = 0.99
+
+        # Potential function: normalized position (higher = closer to goal)
+        # Phi(s) = (position + 1.2) / 1.8, maps [-1.2, 0.6] to [0, 1]
+        current_potential = (position + 1.2) / 1.8
+        prev_potential = (self._prev_position + 1.2) / 1.8 if self._prev_position is not None else current_potential
+
+        # Pure PBRS: gamma * Phi(s') - Phi(s)
+        shaping_reward = gamma * current_potential - prev_potential
+
+        # Apply shaping with moderate scale factor
+        shaped_reward = original_reward + shaping_reward * 5.0
+
+        # Update previous position for next step
+        self._prev_position = position
+
+        return shaped_reward
 
     def _pad_observation(self, obs: np.ndarray) -> np.ndarray:
         """Pad observation to standardized dimension."""

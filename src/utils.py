@@ -33,7 +33,7 @@ class TrainingConfig:
     hidden_dim: int = 128
     max_episodes: int = 2000
     max_steps: int = 1000
-    entropy_coef: float = 0.01
+    entropy_coef: float = 0.05
     value_loss_coef: float = 0.5
     log_interval: int = 10
     save_interval: int = 100

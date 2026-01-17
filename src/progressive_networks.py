@@ -256,7 +256,7 @@ class ProgressiveNetworkTrainer:
             ).to(DEVICE)
 
             path = get_model_path(env_name)
-            checkpoint = torch.load(path, map_location=DEVICE)
+            checkpoint = torch.load(path, map_location=DEVICE, weights_only=False)
             model.load_state_dict(checkpoint['model_state_dict'])
             model.eval()
 

@@ -156,7 +156,7 @@ class ActorCritic(nn.Module):
         action = dist.sample()
         log_prob = dist.log_prob(action)
 
-        return action.item(), log_prob, value.squeeze()
+        return action.item(), log_prob.squeeze(), value.squeeze()
 
     def evaluate(self, states: torch.Tensor, actions: torch.Tensor,
                  valid_actions: List[int] = None) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -359,7 +359,7 @@ class ActorCriticTrainer:
         if path is None:
             path = get_model_path(self.env.env_name)
 
-        checkpoint = torch.load(path, map_location=DEVICE)
+        checkpoint = torch.load(path, map_location=DEVICE, weights_only=False)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         print(f"Model loaded from {path}")

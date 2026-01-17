@@ -169,6 +169,17 @@ def print_comparison_table(section1_results: dict, section2_results: dict, secti
     print("\n" + "=" * 90)
 
 
+class NumpyEncoder(json.JSONEncoder):
+    """JSON encoder that handles numpy types."""
+    def default(self, obj):
+        import numpy as np
+        if isinstance(obj, (np.integer, np.floating)):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+
 def save_results(results: dict, filename: str):
     """Save results to JSON file."""
     report_dir = os.path.join(os.path.dirname(__file__), "report")
@@ -176,7 +187,7 @@ def save_results(results: dict, filename: str):
 
     filepath = os.path.join(report_dir, filename)
     with open(filepath, 'w') as f:
-        json.dump(results, f, indent=2)
+        json.dump(results, f, indent=2, cls=NumpyEncoder)
     print(f"Results saved to {filepath}")
 
 

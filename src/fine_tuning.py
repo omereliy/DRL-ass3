@@ -69,7 +69,7 @@ class FineTuningTrainer:
         ).to(DEVICE)
 
         source_path = get_model_path(self.source_env_name)
-        checkpoint = torch.load(source_path, map_location=DEVICE)
+        checkpoint = torch.load(source_path, map_location=DEVICE, weights_only=False)
         model.load_state_dict(checkpoint['model_state_dict'])
 
         print(f"Loaded pre-trained model from {self.source_env_name}")

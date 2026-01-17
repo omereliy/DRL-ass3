@@ -116,14 +116,65 @@ Apply the following settings (Sources -> Target):
 
 ```
 DRL-ass3/
+├── train.py                    # Main CLI entry point
 ├── README.md
+├── requirements.txt            # Python dependencies
 ├── src/
-│   ├── actor_critic.py
-│   ├── environments.py
-│   ├── fine_tuning.py
-│   ├── progressive_networks.py
-│   └── utils.py
-├── models/
-├── logs/
+│   ├── actor_critic.py         # Section 1: Actor-Critic implementation
+│   ├── environments.py         # Standardized environment wrappers
+│   ├── fine_tuning.py          # Section 2: Fine-tuning trainer
+│   ├── progressive_networks.py # Section 3: Progressive Networks
+│   └── utils.py                # Configuration and utilities
+├── models/                     # Saved model checkpoints
+├── logs/                       # TensorBoard logs
 └── report/
+    ├── report.pdf              # Final report (4 pages)
+    ├── report.tex              # LaTeX source
+    └── generate_pdf.py         # PDF generation script
 ```
+
+---
+
+## Running Instructions
+
+### Installation
+
+```bash
+pip install -r requirements.txt
+```
+
+### Training
+
+```bash
+# Run all sections sequentially
+python train.py --section all
+
+# Run individual sections
+python train.py --section 1    # Train individual networks (Section 1)
+python train.py --section 2    # Fine-tuning experiments (Section 2)
+python train.py --section 3    # Progressive networks (Section 3)
+
+# With custom parameters
+python train.py --section all --episodes 2000 --lr 0.001 --hidden 128
+```
+
+### TensorBoard Visualization
+
+```bash
+tensorboard --logdir logs/
+```
+
+Then open http://localhost:6006 in your browser.
+
+---
+
+## Implementation Details
+
+### Standardized Dimensions
+- **Observation dimension:** 6 (padded with zeros for smaller environments)
+- **Action dimension:** 3 (with action masking for environments with fewer actions)
+
+### Network Architecture
+- Actor: 6 (input) → 128 (hidden) → 128 (hidden) → 3 (output)
+- Critic: 6 (input) → 128 (hidden) → 128 (hidden) → 1 (output)
+- Xavier/Glorot initialization for all weights
