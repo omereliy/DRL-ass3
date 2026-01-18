@@ -36,12 +36,14 @@ class ProgressiveActor(nn.Module):
     def __init__(self, source_actors: List[nn.Module],
                  obs_dim: int = STANDARDIZED_OBS_DIM,
                  act_dim: int = STANDARDIZED_ACT_DIM,
-                 hidden_dim: int = 128):
+                 hidden_dim: int = 128,
+                 lateral_scale: float = 0.1):
         super().__init__()
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.hidden_dim = hidden_dim
         self.num_sources = len(source_actors)
+        self.lateral_scale = lateral_scale  # Scale down lateral contributions
 
         # Store frozen source actors
         self.source_actors = nn.ModuleList(source_actors)
@@ -86,9 +88,9 @@ class ProgressiveActor(nn.Module):
             with torch.no_grad():
                 source_h1 = F.relu(source_actor.fc1(x))
             lateral_1 = lateral_1 + F.relu(lateral(source_h1))
-        # Average lateral contributions to prevent magnitude explosion
+        # Scale down lateral contributions to let target learn independently
         if self.num_sources > 0:
-            lateral_1 = lateral_1 / self.num_sources
+            lateral_1 = lateral_1 * self.lateral_scale / self.num_sources
 
         # Layer 2: combine target h1 with lateral from source layer 1
         h2_target = F.relu(self.target_fc2(h1_target + lateral_1))
@@ -99,9 +101,9 @@ class ProgressiveActor(nn.Module):
             with torch.no_grad():
                 source_h2 = source_actor.get_hidden(x)  # Returns relu(fc2(relu(fc1(x))))
             lateral_2 = lateral_2 + F.relu(lateral(source_h2))
-        # Average lateral contributions
+        # Scale down lateral contributions
         if self.num_sources > 0:
-            lateral_2 = lateral_2 / self.num_sources
+            lateral_2 = lateral_2 * self.lateral_scale / self.num_sources
 
         # Output layer: combine target h2 with lateral from source layer 2
         return self.fc3(h2_target + lateral_2)
@@ -125,11 +127,13 @@ class ProgressiveCritic(nn.Module):
 
     def __init__(self, source_critics: List[nn.Module],
                  obs_dim: int = STANDARDIZED_OBS_DIM,
-                 hidden_dim: int = 128):
+                 hidden_dim: int = 128,
+                 lateral_scale: float = 0.1):
         super().__init__()
         self.obs_dim = obs_dim
         self.hidden_dim = hidden_dim
         self.num_sources = len(source_critics)
+        self.lateral_scale = lateral_scale  # Scale down lateral contributions
 
         # Store frozen source critics
         self.source_critics = nn.ModuleList(source_critics)
@@ -174,9 +178,9 @@ class ProgressiveCritic(nn.Module):
             with torch.no_grad():
                 source_h1 = F.relu(source_critic.fc1(x))
             lateral_1 = lateral_1 + F.relu(lateral(source_h1))
-        # Average lateral contributions to prevent magnitude explosion
+        # Scale down lateral contributions to let target learn independently
         if self.num_sources > 0:
-            lateral_1 = lateral_1 / self.num_sources
+            lateral_1 = lateral_1 * self.lateral_scale / self.num_sources
 
         # Layer 2: combine target h1 with lateral from source layer 1
         h2_target = F.relu(self.target_fc2(h1_target + lateral_1))
@@ -187,9 +191,9 @@ class ProgressiveCritic(nn.Module):
             with torch.no_grad():
                 source_h2 = source_critic.get_hidden(x)  # Returns relu(fc2(relu(fc1(x))))
             lateral_2 = lateral_2 + F.relu(lateral(source_h2))
-        # Average lateral contributions
+        # Scale down lateral contributions
         if self.num_sources > 0:
-            lateral_2 = lateral_2 / self.num_sources
+            lateral_2 = lateral_2 * self.lateral_scale / self.num_sources
 
         # Output layer: combine target h2 with lateral from source layer 2
         return self.fc3(h2_target + lateral_2)
