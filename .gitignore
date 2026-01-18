@@ -1,2 +1,5 @@
 .idea
 logs
+outputs
+# Large output files
+outputs/

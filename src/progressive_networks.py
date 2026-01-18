@@ -29,7 +29,8 @@ class ProgressiveActor(nn.Module):
 
     Architecture:
     - Source networks are frozen and provide hidden layer features
-    - Target network combines its own hidden features with source features
+    - Target network has TWO hidden layers (matching source architecture)
+    - Layer-wise lateral connections: source layer i -> target layer i+1
     """
 
     def __init__(self, source_actors: List[nn.Module],
@@ -48,53 +49,78 @@ class ProgressiveActor(nn.Module):
             for param in actor.parameters():
                 param.requires_grad = False
 
-        # Target network's own hidden layer
+        # Target network - TWO hidden layers (matching source architecture)
         self.target_fc1 = nn.Linear(obs_dim, hidden_dim)
+        self.target_fc2 = nn.Linear(hidden_dim, hidden_dim)
 
-        # Lateral connections from source hidden layers to target output
-        # Each source contributes hidden_dim features
-        self.lateral_connections = nn.ModuleList([
+        # Lateral connections for EACH layer
+        # Layer 1: source fc1 output -> target layer 2 input
+        self.lateral_connections_1 = nn.ModuleList([
+            nn.Linear(hidden_dim, hidden_dim) for _ in range(self.num_sources)
+        ])
+        # Layer 2: source fc2 output -> target output layer input
+        self.lateral_connections_2 = nn.ModuleList([
             nn.Linear(hidden_dim, hidden_dim) for _ in range(self.num_sources)
         ])
 
-        # Output layer combines target hidden + lateral features
-        # Input: target_hidden + sum of lateral connections
-        self.fc2 = nn.Linear(hidden_dim, act_dim)
+        # Output layer
+        self.fc3 = nn.Linear(hidden_dim, act_dim)
 
         # Initialize trainable weights
         init_weights(self.target_fc1)
-        for lateral in self.lateral_connections:
+        init_weights(self.target_fc2)
+        for lateral in self.lateral_connections_1:
             init_weights(lateral)
-        init_weights(self.fc2)
+        for lateral in self.lateral_connections_2:
+            init_weights(lateral)
+        init_weights(self.fc3)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass with progressive network architecture."""
-        # Get target network's hidden representation
-        target_hidden = F.relu(self.target_fc1(x))
+        # Layer 1: target hidden
+        h1_target = F.relu(self.target_fc1(x))
 
-        # Get lateral connections from source networks
-        lateral_sum = torch.zeros_like(target_hidden)
-        for i, (source_actor, lateral) in enumerate(zip(self.source_actors, self.lateral_connections)):
+        # Lateral connections from source layer 1
+        lateral_1 = torch.zeros_like(h1_target)
+        for source_actor, lateral in zip(self.source_actors, self.lateral_connections_1):
             with torch.no_grad():
-                source_hidden = source_actor.get_hidden(x)
-            lateral_features = F.relu(lateral(source_hidden))
-            lateral_sum = lateral_sum + lateral_features
+                source_h1 = F.relu(source_actor.fc1(x))
+            lateral_1 = lateral_1 + F.relu(lateral(source_h1))
+        # Average lateral contributions to prevent magnitude explosion
+        if self.num_sources > 0:
+            lateral_1 = lateral_1 / self.num_sources
 
-        # Combine target hidden with lateral features
-        combined = target_hidden + lateral_sum
+        # Layer 2: combine target h1 with lateral from source layer 1
+        h2_target = F.relu(self.target_fc2(h1_target + lateral_1))
 
-        # Output layer
-        return self.fc2(combined)
+        # Lateral connections from source layer 2
+        lateral_2 = torch.zeros_like(h2_target)
+        for source_actor, lateral in zip(self.source_actors, self.lateral_connections_2):
+            with torch.no_grad():
+                source_h2 = source_actor.get_hidden(x)  # Returns relu(fc2(relu(fc1(x))))
+            lateral_2 = lateral_2 + F.relu(lateral(source_h2))
+        # Average lateral contributions
+        if self.num_sources > 0:
+            lateral_2 = lateral_2 / self.num_sources
+
+        # Output layer: combine target h2 with lateral from source layer 2
+        return self.fc3(h2_target + lateral_2)
 
     def get_hidden(self, x: torch.Tensor) -> torch.Tensor:
-        """Get target hidden layer activations."""
-        return F.relu(self.target_fc1(x))
+        """Get target hidden layer activations (after both hidden layers)."""
+        h1 = F.relu(self.target_fc1(x))
+        return F.relu(self.target_fc2(h1))
 
 
 class ProgressiveCritic(nn.Module):
     """
     Progressive Critic network that combines frozen source networks
     with a trainable target network.
+
+    Architecture:
+    - Source networks are frozen and provide hidden layer features
+    - Target network has TWO hidden layers (matching source architecture)
+    - Layer-wise lateral connections: source layer i -> target layer i+1
     """
 
     def __init__(self, source_critics: List[nn.Module],
@@ -111,41 +137,62 @@ class ProgressiveCritic(nn.Module):
             for param in critic.parameters():
                 param.requires_grad = False
 
-        # Target network's own hidden layer
+        # Target network - TWO hidden layers (matching source architecture)
         self.target_fc1 = nn.Linear(obs_dim, hidden_dim)
+        self.target_fc2 = nn.Linear(hidden_dim, hidden_dim)
 
-        # Lateral connections from source hidden layers
-        self.lateral_connections = nn.ModuleList([
+        # Lateral connections for EACH layer
+        # Layer 1: source fc1 output -> target layer 2 input
+        self.lateral_connections_1 = nn.ModuleList([
+            nn.Linear(hidden_dim, hidden_dim) for _ in range(self.num_sources)
+        ])
+        # Layer 2: source fc2 output -> target output layer input
+        self.lateral_connections_2 = nn.ModuleList([
             nn.Linear(hidden_dim, hidden_dim) for _ in range(self.num_sources)
         ])
 
         # Output layer
-        self.fc2 = nn.Linear(hidden_dim, 1)
+        self.fc3 = nn.Linear(hidden_dim, 1)
 
         # Initialize trainable weights
         init_weights(self.target_fc1)
-        for lateral in self.lateral_connections:
+        init_weights(self.target_fc2)
+        for lateral in self.lateral_connections_1:
             init_weights(lateral)
-        init_weights(self.fc2)
+        for lateral in self.lateral_connections_2:
+            init_weights(lateral)
+        init_weights(self.fc3)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass with progressive network architecture."""
-        # Get target network's hidden representation
-        target_hidden = F.relu(self.target_fc1(x))
+        # Layer 1: target hidden
+        h1_target = F.relu(self.target_fc1(x))
 
-        # Get lateral connections from source networks
-        lateral_sum = torch.zeros_like(target_hidden)
-        for i, (source_critic, lateral) in enumerate(zip(self.source_critics, self.lateral_connections)):
+        # Lateral connections from source layer 1
+        lateral_1 = torch.zeros_like(h1_target)
+        for source_critic, lateral in zip(self.source_critics, self.lateral_connections_1):
             with torch.no_grad():
-                source_hidden = source_critic.get_hidden(x)
-            lateral_features = F.relu(lateral(source_hidden))
-            lateral_sum = lateral_sum + lateral_features
+                source_h1 = F.relu(source_critic.fc1(x))
+            lateral_1 = lateral_1 + F.relu(lateral(source_h1))
+        # Average lateral contributions to prevent magnitude explosion
+        if self.num_sources > 0:
+            lateral_1 = lateral_1 / self.num_sources
 
-        # Combine target hidden with lateral features
-        combined = target_hidden + lateral_sum
+        # Layer 2: combine target h1 with lateral from source layer 1
+        h2_target = F.relu(self.target_fc2(h1_target + lateral_1))
 
-        # Output layer
-        return self.fc2(combined)
+        # Lateral connections from source layer 2
+        lateral_2 = torch.zeros_like(h2_target)
+        for source_critic, lateral in zip(self.source_critics, self.lateral_connections_2):
+            with torch.no_grad():
+                source_h2 = source_critic.get_hidden(x)  # Returns relu(fc2(relu(fc1(x))))
+            lateral_2 = lateral_2 + F.relu(lateral(source_h2))
+        # Average lateral contributions
+        if self.num_sources > 0:
+            lateral_2 = lateral_2 / self.num_sources
+
+        # Output layer: combine target h2 with lateral from source layer 2
+        return self.fc3(h2_target + lateral_2)
 
 
 class ProgressiveActorCritic(nn.Module):

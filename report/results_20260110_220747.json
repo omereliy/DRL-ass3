@@ -1,0 +1,22 @@
+{
+  "config": {
+    "max_episodes": 2000,
+    "lr": 0.001,
+    "hidden_dim": 128,
+    "seed": 42,
+    "gamma": 0.99
+  },
+  "timestamp": "2026-01-10T22:00:49.399204",
+  "section1": {
+    "CartPole-v1": {
+      "total_episodes": 2000,
+      "total_steps": 44162,
+      "training_time": 15.245528221130371,
+      "final_avg_reward": 22.67,
+      "convergence_episode": null
+    },
+    "Acrobot-v1": {
+      "total_episodes": 2000,
+      "total_steps": 998675,
+      "training_time": 340.68172311782837,
+      "final_avg_reward": 

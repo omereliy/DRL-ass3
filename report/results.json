@@ -1,0 +1,61 @@
+{
+  "timestamp": "2026-01-17T19:55:00",
+  "section1": {
+    "CartPole-v1": {
+      "total_episodes": 958,
+      "final_avg_reward": 490.84,
+      "converged": true,
+      "convergence_episode": 857
+    },
+    "Acrobot-v1": {
+      "total_episodes": 375,
+      "final_avg_reward": -88.0,
+      "converged": true,
+      "convergence_episode": 274
+    },
+    "MountainCarContinuous-v0": {
+      "total_episodes": 1500,
+      "final_avg_reward": -9.42,
+      "converged": false,
+      "convergence_episode": null
+    }
+  },
+  "section2": {
+    "acrobot_to_cartpole": {
+      "source": "Acrobot-v1",
+      "target": "CartPole-v1",
+      "total_episodes": 623,
+      "final_avg_reward": 484.87,
+      "converged": true
+    },
+    "cartpole_to_mountaincar": {
+      "source": "CartPole-v1",
+      "target": "MountainCarContinuous-v0",
+      "total_episodes": 1500,
+      "final_avg_reward": -9.41,
+      "converged": false
+    }
+  },
+  "section3": {
+    "acrobot_mountaincar_to_cartpole": {
+      "sources": [
+        "Acrobot-v1",
+        "MountainCarContinuous-v0"
+      ],
+      "target": "CartPole-v1",
+      "total_episodes": 1500,
+      "final_avg_reward": 21.13,
+      "converged": false
+    },
+    "cartpole_acrobot_to_mountaincar": {
+      "sources": [
+        "CartPole-v1",
+        "Acrobot-v1"
+      ],
+      "target": "MountainCarContinuous-v0",
+      "total_episodes": 1500,
+      "final_avg_reward": -41.61,
+      "converged": false
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "config": {
+    "max_episodes": 2000,
+    "lr": 0.0003,
+    "hidden_dim": 256,
+    "seed": 42,
+    "gamma": 0.99
+  },
+  "timestamp": "2026-01-11T09:32:48.197827",
+  "section1": {
+    "CartPole-v1": {
+      "total_episodes": 2000,
+      "total_steps": 44510,
+      "training_time": 23.166210889816284,
+      "final_avg_reward": 21.64,
+      "convergence_episode": null
+    },
+    "Acrobot-v1": {
+      "total_episodes": 2000,
+      "total_steps": 997547,
+      "training_time": 535.3350729942322,
+      "final_avg_reward": -499.42,
+      "convergence_episode": null
+    },
+    "MountainCarContinuous-v0": {
+      "total_episodes": 2000,
+      "total_steps": 1976700,
+      "training_time": 981.5564820766449,
+      "final_avg_reward": -74.6107177734375,
+      "convergence_episode": null
+    }
+  }
+}
