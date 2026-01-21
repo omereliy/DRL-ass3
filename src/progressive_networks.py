@@ -259,10 +259,9 @@ class ProgressiveNetworkTrainer:
         ).to(DEVICE)
 
         # Optimizer (only trains non-frozen parameters)
-        # Use lower learning rate for progressive networks for stability
+        # Use same learning rate as Section 1 - zero-initialized laterals won't interfere
         trainable_params = [p for p in self.model.parameters() if p.requires_grad]
-        progressive_lr = self.config.lr_actor * 0.3  # 3e-4 if default is 1e-3
-        self.optimizer = optim.Adam(trainable_params, lr=progressive_lr)
+        self.optimizer = optim.Adam(trainable_params, lr=self.config.lr_actor)
 
         # Statistics
         self.stats = TrainingStats()
