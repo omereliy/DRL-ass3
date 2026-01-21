@@ -173,14 +173,31 @@ class StandardizedEnv:
     def _shape_acrobot_reward(self, obs: np.ndarray, original_reward: float,
                                terminated: bool) -> float:
         """
-        Apply reward shaping for Acrobot.
+        Apply reward shaping for Acrobot using Potential-Based Reward Shaping.
 
-        DISABLED: Previous exponential bonuses created massive reward variance
-        that destabilized value learning. Raw -1 per step reward is sufficient
-        with proper network capacity (256 hidden units).
+        PBRS: R'(s,a,s') = R(s,a,s') + gamma * Phi(s') - Phi(s)
+
+        This provides denser reward signal while preserving optimal policy.
+        The potential is based on tip height (goal is height > 1.0).
         """
-        # Use raw environment reward (-1 per step until goal reached)
-        return original_reward
+        tip_height = self._compute_acrobot_tip_height(obs)
+        gamma = 0.99
+
+        # Potential function: normalized tip height
+        # Tip height ranges from -2.0 to +2.0, normalize to [0, 1]
+        current_potential = (tip_height + 2.0) / 4.0
+        prev_potential = (self._max_tip_height + 2.0) / 4.0
+
+        # PBRS shaping
+        shaping_reward = gamma * current_potential - prev_potential
+
+        # Update max tip height for next step
+        self._max_tip_height = tip_height
+
+        # Apply shaping with moderate scale
+        shaped_reward = original_reward + shaping_reward * 10.0
+
+        return shaped_reward
 
     def _shape_mountaincar_reward(self, obs: np.ndarray, original_reward: float,
                                    terminated: bool) -> float:
