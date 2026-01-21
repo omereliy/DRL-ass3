@@ -216,8 +216,8 @@ TensorBoard visualization:
                         help='Maximum number of episodes (default: 2000)')
     parser.add_argument('--lr', type=float, default=1e-3,
                         help='Learning rate (default: 0.001)')
-    parser.add_argument('--hidden', type=int, default=128,
-                        help='Hidden layer dimension (default: 128)')
+    parser.add_argument('--hidden', type=int, default=256,
+                        help='Hidden layer dimension (default: 256, matches pre-trained models)')
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed (default: 42)')
     parser.add_argument('--gamma', type=float, default=0.99,

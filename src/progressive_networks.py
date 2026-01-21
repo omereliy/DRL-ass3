@@ -67,10 +67,15 @@ class ProgressiveActor(nn.Module):
             self.lateral_fc2 = nn.ModuleList([
                 nn.Linear(hidden_dim, hidden_dim) for _ in range(self.num_sources)
             ])
-            # Initialize lateral connections with standard Xavier (was gain=0.1, too small!)
+            # Initialize lateral connections with standard Xavier
             for lateral in self.lateral_fc2:
                 nn.init.xavier_uniform_(lateral.weight, gain=1.0)
                 nn.init.zeros_(lateral.bias)
+
+            # Learnable scaling factor for lateral contributions
+            # Starts at 0 so network first learns like standard ActorCritic,
+            # then can optionally incorporate lateral knowledge if helpful
+            self.lateral_scale = nn.Parameter(torch.tensor(0.0))
 
         # Initialize trainable weights
         init_weights(self.target_fc1)
@@ -96,14 +101,11 @@ class ProgressiveActor(nn.Module):
             for i, h1_source in enumerate(source_h1s):
                 lateral_sum = lateral_sum + self.lateral_fc2[i](h1_source)
 
-            # DEBUG: Set to True to disable lateral contributions (test base network)
-            DEBUG_DISABLE_LATERAL = False
-            if DEBUG_DISABLE_LATERAL:
-                lateral_sum = torch.zeros_like(lateral_sum)
-
-            # Layer 2 with lateral connections:
-            # h2 = f(W2 * h1_target + sum(U_j * h1_source_j))
-            h2_target = F.relu(self.target_fc2(h1_target) + lateral_sum)
+            # RESIDUAL-STYLE LATERALS: Apply ReLU to target first, then add laterals
+            # This prevents dead ReLU problem by ensuring target network can always
+            # produce non-zero outputs, regardless of lateral contributions
+            h2_base = F.relu(self.target_fc2(h1_target))
+            h2_target = h2_base + self.lateral_scale * lateral_sum
         else:
             # No lateral connections - standard forward pass
             h2_target = F.relu(self.target_fc2(h1_target))
@@ -172,10 +174,15 @@ class ProgressiveCritic(nn.Module):
             self.lateral_fc2 = nn.ModuleList([
                 nn.Linear(hidden_dim, hidden_dim) for _ in range(self.num_sources)
             ])
-            # Initialize lateral connections with standard Xavier (was gain=0.1, too small!)
+            # Initialize lateral connections with standard Xavier
             for lateral in self.lateral_fc2:
                 nn.init.xavier_uniform_(lateral.weight, gain=1.0)
                 nn.init.zeros_(lateral.bias)
+
+            # Learnable scaling factor for lateral contributions
+            # Starts at 0 so network first learns like standard ActorCritic,
+            # then can optionally incorporate lateral knowledge if helpful
+            self.lateral_scale = nn.Parameter(torch.tensor(0.0))
 
         # Initialize trainable weights
         init_weights(self.target_fc1)
@@ -201,13 +208,11 @@ class ProgressiveCritic(nn.Module):
             for i, h1_source in enumerate(source_h1s):
                 lateral_sum = lateral_sum + self.lateral_fc2[i](h1_source)
 
-            # DEBUG: Set to True to disable lateral contributions (test base network)
-            DEBUG_DISABLE_LATERAL = False
-            if DEBUG_DISABLE_LATERAL:
-                lateral_sum = torch.zeros_like(lateral_sum)
-
-            # Layer 2 with lateral connections
-            h2_target = F.relu(self.target_fc2(h1_target) + lateral_sum)
+            # RESIDUAL-STYLE LATERALS: Apply ReLU to target first, then add laterals
+            # This prevents dead ReLU problem by ensuring target network can always
+            # produce non-zero outputs, regardless of lateral contributions
+            h2_base = F.relu(self.target_fc2(h1_target))
+            h2_target = h2_base + self.lateral_scale * lateral_sum
         else:
             # No lateral connections - standard forward pass
             h2_target = F.relu(self.target_fc2(h1_target))
@@ -418,6 +423,12 @@ class ProgressiveNetworkTrainer:
                 if p.grad is not None:
                     grad_norms.append((name, p.grad.norm().item()))
             print(f"DEBUG Ep {self._episode_count}: Grad norms (first 5): {grad_norms[:5]}")
+
+            # Log lateral_scale values if using lateral connections
+            if self.use_laterals and hasattr(self.model.actor, 'lateral_scale'):
+                actor_scale = self.model.actor.lateral_scale.item()
+                critic_scale = self.model.critic.lateral_scale.item()
+                print(f"DEBUG Ep {self._episode_count}: lateral_scale (actor={actor_scale:.4f}, critic={critic_scale:.4f})")
 
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
         self.optimizer.step()

@@ -30,7 +30,7 @@ class TrainingConfig:
     gamma: float = 0.99
     lr_actor: float = 1e-3
     lr_critic: float = 1e-3
-    hidden_dim: int = 128
+    hidden_dim: int = 256  # Match pre-trained models
     max_episodes: int = 2000
     max_steps: int = 1000
     entropy_coef: float = 0.05
