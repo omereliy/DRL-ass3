@@ -84,11 +84,17 @@ class ProgressiveActor(nn.Module):
 
         if self.use_laterals and self.num_sources > 0:
             # Get source hidden activations (layer 1) - frozen, no gradients
-            lateral_sum = torch.zeros_like(h1_target)
+            source_h1s = []
             with torch.no_grad():
-                for i, actor in enumerate(self._source_actors):
+                for actor in self._source_actors:
                     h1_source = F.relu(actor.fc1(x))
-                    lateral_sum = lateral_sum + self.lateral_fc2[i](h1_source)
+                    source_h1s.append(h1_source)
+
+            # Apply trainable lateral connections OUTSIDE no_grad block
+            # This allows gradients to flow through lateral_fc2 layers
+            lateral_sum = torch.zeros_like(h1_target)
+            for i, h1_source in enumerate(source_h1s):
+                lateral_sum = lateral_sum + self.lateral_fc2[i](h1_source)
 
             # Layer 2 with lateral connections:
             # h2 = f(W2 * h1_target + sum(U_j * h1_source_j))
@@ -178,11 +184,17 @@ class ProgressiveCritic(nn.Module):
 
         if self.use_laterals and self.num_sources > 0:
             # Get source hidden activations (layer 1) - frozen, no gradients
-            lateral_sum = torch.zeros_like(h1_target)
+            source_h1s = []
             with torch.no_grad():
-                for i, critic in enumerate(self._source_critics):
+                for critic in self._source_critics:
                     h1_source = F.relu(critic.fc1(x))
-                    lateral_sum = lateral_sum + self.lateral_fc2[i](h1_source)
+                    source_h1s.append(h1_source)
+
+            # Apply trainable lateral connections OUTSIDE no_grad block
+            # This allows gradients to flow through lateral_fc2 layers
+            lateral_sum = torch.zeros_like(h1_target)
+            for i, h1_source in enumerate(source_h1s):
+                lateral_sum = lateral_sum + self.lateral_fc2[i](h1_source)
 
             # Layer 2 with lateral connections
             h2_target = F.relu(self.target_fc2(h1_target) + lateral_sum)
