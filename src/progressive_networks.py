@@ -534,6 +534,30 @@ def run_section3_experiments(config: TrainingConfig = None, use_laterals: bool =
 
     results = {}
 
+    # DIAGNOSTIC: When use_laterals=False, use ActorCriticTrainer directly
+    # This isolates whether the bug is in ProgressiveNetworkTrainer or elsewhere
+    if not use_laterals:
+        print("\n[DIAGNOSTIC] use_laterals=False - Using ActorCriticTrainer directly!")
+        print("[DIAGNOSTIC] This bypasses ProgressiveNetworkTrainer entirely.")
+        from .actor_critic import train_individual_network
+
+        # Experiment 1: Just train CartPole from scratch
+        print("\n" + "=" * 70)
+        print("Section 3 Experiment 1: Training CartPole-v1 with ActorCriticTrainer")
+        print("(Bypassing ProgressiveNetworkTrainer for diagnostic)")
+        print("=" * 70)
+        results['acrobot_mountaincar_to_cartpole'] = train_individual_network("CartPole-v1", config)
+
+        # Experiment 2: Just train MountainCar from scratch
+        print("\n" + "=" * 70)
+        print("Section 3 Experiment 2: Training MountainCarContinuous-v0 with ActorCriticTrainer")
+        print("(Bypassing ProgressiveNetworkTrainer for diagnostic)")
+        print("=" * 70)
+        results['cartpole_acrobot_to_mountaincar'] = train_individual_network("MountainCarContinuous-v0", config)
+
+        return results
+
+    # Normal path: Use ProgressiveNetworkTrainer with lateral connections
     # Experiment 1: {Acrobot, MountainCar} -> CartPole
     print("\n" + "=" * 70)
     print("Section 3 Experiment 1: {Acrobot-v1, MountainCarContinuous-v0} -> CartPole-v1")
