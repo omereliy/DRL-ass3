@@ -67,9 +67,9 @@ class ProgressiveActor(nn.Module):
             self.lateral_fc2 = nn.ModuleList([
                 nn.Linear(hidden_dim, hidden_dim) for _ in range(self.num_sources)
             ])
-            # Initialize lateral connections with small weights
+            # Initialize lateral connections with standard Xavier (was gain=0.1, too small!)
             for lateral in self.lateral_fc2:
-                nn.init.xavier_uniform_(lateral.weight, gain=0.1)
+                nn.init.xavier_uniform_(lateral.weight, gain=1.0)
                 nn.init.zeros_(lateral.bias)
 
         # Initialize trainable weights
@@ -172,9 +172,9 @@ class ProgressiveCritic(nn.Module):
             self.lateral_fc2 = nn.ModuleList([
                 nn.Linear(hidden_dim, hidden_dim) for _ in range(self.num_sources)
             ])
-            # Initialize lateral connections with small weights
+            # Initialize lateral connections with standard Xavier (was gain=0.1, too small!)
             for lateral in self.lateral_fc2:
-                nn.init.xavier_uniform_(lateral.weight, gain=0.1)
+                nn.init.xavier_uniform_(lateral.weight, gain=1.0)
                 nn.init.zeros_(lateral.bias)
 
         # Initialize trainable weights
