@@ -297,10 +297,9 @@ class ProgressiveNetworkTrainer:
 
         print(f"Progressive network created with use_laterals={use_laterals}")
 
-        # Optimizer (only trains non-frozen parameters)
-        # Use same learning rate as Section 1 - zero-initialized laterals won't interfere
-        trainable_params = [p for p in self.model.parameters() if p.requires_grad]
-        self.optimizer = optim.Adam(trainable_params, lr=self.config.lr_actor)
+        # Optimizer - match ActorCriticTrainer exactly
+        # Note: When use_laterals=False, all params have requires_grad=True anyway
+        self.optimizer = optim.Adam(self.model.parameters(), lr=self.config.lr_actor)
 
         # Statistics
         self.stats = TrainingStats()
@@ -348,9 +347,9 @@ class ProgressiveNetworkTrainer:
             values.append(value)
             rewards.append(reward)
 
-            # Compute entropy for this state
+            # Compute entropy for this state - match ActorCriticTrainer exactly
             state_tensor = torch.FloatTensor(state).unsqueeze(0).to(DEVICE)
-            entropy = self.model.get_entropy(state_tensor, self.valid_actions)
+            entropy = self.model.actor.get_entropy(state_tensor, self.valid_actions)
             entropies.append(entropy)
 
             state = next_state
@@ -378,12 +377,10 @@ class ProgressiveNetworkTrainer:
         # Total loss
         loss = actor_loss + self.config.value_loss_coef * critic_loss - self.config.entropy_coef * entropy
 
-        # Update
+        # Update - match ActorCriticTrainer exactly
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(
-            [p for p in self.model.parameters() if p.requires_grad], 0.5
-        )
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
         self.optimizer.step()
 
         episode_reward = sum(rewards)
