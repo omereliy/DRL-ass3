@@ -19,7 +19,7 @@ from .utils import (
     check_convergence, print_training_stats, set_seed, init_weights
 )
 from .environments import create_env, StandardizedEnv
-from .actor_critic import ActorCritic
+from .actor_critic import ActorCritic, Actor, Critic
 
 
 class ProgressiveActor(nn.Module):
@@ -211,12 +211,18 @@ class ProgressiveActorCritic(nn.Module):
         self.hidden_dim = hidden_dim
         self.use_laterals = use_laterals
 
-        # Extract actors and critics from source models
-        source_actors = [model.actor for model in source_models]
-        source_critics = [model.critic for model in source_models]
-
-        self.actor = ProgressiveActor(source_actors, obs_dim, act_dim, hidden_dim, use_laterals)
-        self.critic = ProgressiveCritic(source_critics, obs_dim, hidden_dim, use_laterals)
+        if use_laterals and len(source_models) > 0:
+            # Use Progressive networks with lateral connections
+            source_actors = [model.actor for model in source_models]
+            source_critics = [model.critic for model in source_models]
+            self.actor = ProgressiveActor(source_actors, obs_dim, act_dim, hidden_dim, use_laterals)
+            self.critic = ProgressiveCritic(source_critics, obs_dim, hidden_dim, use_laterals)
+        else:
+            # Use standard Actor/Critic (known to work from Section 1)
+            # This ensures baseline functionality when laterals are disabled
+            self.actor = Actor(obs_dim, act_dim, hidden_dim)
+            self.critic = Critic(obs_dim, hidden_dim)
+            print("Using standard Actor/Critic (laterals disabled or no source models)")
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass returns (action_logits, value)."""
