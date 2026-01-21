@@ -58,9 +58,10 @@ class ProgressiveActor(nn.Module):
         self.fc3 = nn.Linear(hidden_dim, act_dim)
 
         # Learnable lateral scales (one per source, per layer)
-        # Initialize small but learnable
-        self.lateral_scale_1 = nn.Parameter(torch.ones(self.num_sources) * lateral_scale)
-        self.lateral_scale_2 = nn.Parameter(torch.ones(self.num_sources) * lateral_scale)
+        # Initialize to ZERO - network learns without lateral interference first,
+        # then can learn to use source features only if helpful
+        self.lateral_scale_1 = nn.Parameter(torch.zeros(self.num_sources))
+        self.lateral_scale_2 = nn.Parameter(torch.zeros(self.num_sources))
 
         # Initialize trainable weights
         init_weights(self.target_fc1)
@@ -132,8 +133,9 @@ class ProgressiveCritic(nn.Module):
         self.fc3 = nn.Linear(hidden_dim, 1)
 
         # Learnable lateral scales (one per source, per layer)
-        self.lateral_scale_1 = nn.Parameter(torch.ones(self.num_sources) * lateral_scale)
-        self.lateral_scale_2 = nn.Parameter(torch.ones(self.num_sources) * lateral_scale)
+        # Initialize to ZERO - network learns without lateral interference first
+        self.lateral_scale_1 = nn.Parameter(torch.zeros(self.num_sources))
+        self.lateral_scale_2 = nn.Parameter(torch.zeros(self.num_sources))
 
         # Initialize trainable weights
         init_weights(self.target_fc1)
