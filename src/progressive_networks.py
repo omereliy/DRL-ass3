@@ -96,6 +96,11 @@ class ProgressiveActor(nn.Module):
             for i, h1_source in enumerate(source_h1s):
                 lateral_sum = lateral_sum + self.lateral_fc2[i](h1_source)
 
+            # DEBUG: Set to True to disable lateral contributions (test base network)
+            DEBUG_DISABLE_LATERAL = False
+            if DEBUG_DISABLE_LATERAL:
+                lateral_sum = torch.zeros_like(lateral_sum)
+
             # Layer 2 with lateral connections:
             # h2 = f(W2 * h1_target + sum(U_j * h1_source_j))
             h2_target = F.relu(self.target_fc2(h1_target) + lateral_sum)
@@ -195,6 +200,11 @@ class ProgressiveCritic(nn.Module):
             lateral_sum = torch.zeros_like(h1_target)
             for i, h1_source in enumerate(source_h1s):
                 lateral_sum = lateral_sum + self.lateral_fc2[i](h1_source)
+
+            # DEBUG: Set to True to disable lateral contributions (test base network)
+            DEBUG_DISABLE_LATERAL = False
+            if DEBUG_DISABLE_LATERAL:
+                lateral_sum = torch.zeros_like(lateral_sum)
 
             # Layer 2 with lateral connections
             h2_target = F.relu(self.target_fc2(h1_target) + lateral_sum)
@@ -309,6 +319,11 @@ class ProgressiveNetworkTrainer:
 
         print(f"Progressive network created with use_laterals={use_laterals}")
 
+        # DEBUG: Print parameter counts
+        total_params = sum(p.numel() for p in self.model.parameters())
+        trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        print(f"DEBUG: Total params: {total_params}, Trainable: {trainable_params}")
+
         # Optimizer - match ActorCriticTrainer exactly
         # Note: When use_laterals=False, all params have requires_grad=True anyway
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.config.lr_actor)
@@ -392,6 +407,18 @@ class ProgressiveNetworkTrainer:
         # Update - match ActorCriticTrainer exactly
         self.optimizer.zero_grad()
         loss.backward()
+
+        # DEBUG: Print gradient info every 100 episodes
+        if not hasattr(self, '_episode_count'):
+            self._episode_count = 0
+        self._episode_count += 1
+        if self._episode_count % 100 == 1:
+            grad_norms = []
+            for name, p in self.model.named_parameters():
+                if p.grad is not None:
+                    grad_norms.append((name, p.grad.norm().item()))
+            print(f"DEBUG Ep {self._episode_count}: Grad norms (first 5): {grad_norms[:5]}")
+
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), 0.5)
         self.optimizer.step()
 
