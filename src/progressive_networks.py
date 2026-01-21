@@ -27,26 +27,30 @@ class ProgressiveActor(nn.Module):
     Progressive Actor network that combines frozen source networks
     with a trainable target network.
 
-    Simplified architecture (adapters are optional per assignment):
+    Architecture per Rusu et al. 2016 (Progressive Neural Networks):
     - Source networks are frozen and provide hidden layer features
     - Target network has TWO hidden layers (matching source architecture)
-    - Direct lateral connections without adapters: source layer i -> target layer i+1
+    - Lateral connections: source layer 1 outputs feed into target layer 2
+    - Formula: h2_target = f(W2 * h1_target + sum(U_j * h1_source_j))
     """
 
     def __init__(self, source_actors: List[nn.Module],
                  obs_dim: int = STANDARDIZED_OBS_DIM,
                  act_dim: int = STANDARDIZED_ACT_DIM,
                  hidden_dim: int = 128,
-                 lateral_scale: float = 0.5):
+                 use_laterals: bool = True):
         super().__init__()
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.hidden_dim = hidden_dim
         self.num_sources = len(source_actors)
+        self.use_laterals = use_laterals
 
-        # Store frozen source actors
-        self.source_actors = nn.ModuleList(source_actors)
-        for actor in self.source_actors:
+        # Store as regular Python list to avoid PyTorch training interference
+        # BUG FIX: Using nn.ModuleList for frozen modules breaks training!
+        self._source_actors = source_actors
+        for actor in self._source_actors:
+            actor.eval()
             for param in actor.parameters():
                 param.requires_grad = False
 
@@ -57,11 +61,16 @@ class ProgressiveActor(nn.Module):
         # Output layer
         self.fc3 = nn.Linear(hidden_dim, act_dim)
 
-        # Learnable lateral scales (one per source, per layer)
-        # Initialize to ZERO - network learns without lateral interference first,
-        # then can learn to use source features only if helpful
-        self.lateral_scale_1 = nn.Parameter(torch.zeros(self.num_sources))
-        self.lateral_scale_2 = nn.Parameter(torch.zeros(self.num_sources))
+        # Lateral connections from each source's layer 1 to target's layer 2
+        # U_j: hidden_dim -> hidden_dim for each source j
+        if self.num_sources > 0 and use_laterals:
+            self.lateral_fc2 = nn.ModuleList([
+                nn.Linear(hidden_dim, hidden_dim) for _ in range(self.num_sources)
+            ])
+            # Initialize lateral connections with small weights
+            for lateral in self.lateral_fc2:
+                nn.init.xavier_uniform_(lateral.weight, gain=0.1)
+                nn.init.zeros_(lateral.bias)
 
         # Initialize trainable weights
         init_weights(self.target_fc1)
@@ -73,9 +82,20 @@ class ProgressiveActor(nn.Module):
         # Layer 1: target hidden
         h1_target = F.relu(self.target_fc1(x))
 
-        # DIAGNOSTIC: Completely disable laterals to test base network
-        # Just use standard forward pass without any lateral connections
-        h2_target = F.relu(self.target_fc2(h1_target))
+        if self.use_laterals and self.num_sources > 0:
+            # Get source hidden activations (layer 1) - frozen, no gradients
+            lateral_sum = torch.zeros_like(h1_target)
+            with torch.no_grad():
+                for i, actor in enumerate(self._source_actors):
+                    h1_source = F.relu(actor.fc1(x))
+                    lateral_sum = lateral_sum + self.lateral_fc2[i](h1_source)
+
+            # Layer 2 with lateral connections:
+            # h2 = f(W2 * h1_target + sum(U_j * h1_source_j))
+            h2_target = F.relu(self.target_fc2(h1_target) + lateral_sum)
+        else:
+            # No lateral connections - standard forward pass
+            h2_target = F.relu(self.target_fc2(h1_target))
 
         # Output layer
         return self.fc3(h2_target)
@@ -85,30 +105,47 @@ class ProgressiveActor(nn.Module):
         h1 = F.relu(self.target_fc1(x))
         return F.relu(self.target_fc2(h1))
 
+    def get_entropy(self, state: torch.Tensor, valid_actions: list = None) -> torch.Tensor:
+        """Compute entropy of the policy distribution."""
+        logits = self.forward(state)
+
+        if valid_actions is not None:
+            mask = torch.ones(logits.shape[-1], device=logits.device) * float('-inf')
+            mask[valid_actions] = 0
+            logits = logits + mask
+
+        probs = F.softmax(logits, dim=-1)
+        dist = Categorical(probs)
+        return dist.entropy().mean()
+
 
 class ProgressiveCritic(nn.Module):
     """
     Progressive Critic network that combines frozen source networks
     with a trainable target network.
 
-    Simplified architecture (adapters are optional per assignment):
+    Architecture per Rusu et al. 2016 (Progressive Neural Networks):
     - Source networks are frozen and provide hidden layer features
     - Target network has TWO hidden layers (matching source architecture)
-    - Direct lateral connections without adapters: source layer i -> target layer i+1
+    - Lateral connections: source layer 1 outputs feed into target layer 2
+    - Formula: h2_target = f(W2 * h1_target + sum(U_j * h1_source_j))
     """
 
     def __init__(self, source_critics: List[nn.Module],
                  obs_dim: int = STANDARDIZED_OBS_DIM,
                  hidden_dim: int = 128,
-                 lateral_scale: float = 0.5):
+                 use_laterals: bool = True):
         super().__init__()
         self.obs_dim = obs_dim
         self.hidden_dim = hidden_dim
         self.num_sources = len(source_critics)
+        self.use_laterals = use_laterals
 
-        # Store frozen source critics
-        self.source_critics = nn.ModuleList(source_critics)
-        for critic in self.source_critics:
+        # Store as regular Python list to avoid PyTorch training interference
+        # BUG FIX: Using nn.ModuleList for frozen modules breaks training!
+        self._source_critics = source_critics
+        for critic in self._source_critics:
+            critic.eval()
             for param in critic.parameters():
                 param.requires_grad = False
 
@@ -119,10 +156,15 @@ class ProgressiveCritic(nn.Module):
         # Output layer
         self.fc3 = nn.Linear(hidden_dim, 1)
 
-        # Learnable lateral scales (one per source, per layer)
-        # Initialize to ZERO - network learns without lateral interference first
-        self.lateral_scale_1 = nn.Parameter(torch.zeros(self.num_sources))
-        self.lateral_scale_2 = nn.Parameter(torch.zeros(self.num_sources))
+        # Lateral connections from each source's layer 1 to target's layer 2
+        if self.num_sources > 0 and use_laterals:
+            self.lateral_fc2 = nn.ModuleList([
+                nn.Linear(hidden_dim, hidden_dim) for _ in range(self.num_sources)
+            ])
+            # Initialize lateral connections with small weights
+            for lateral in self.lateral_fc2:
+                nn.init.xavier_uniform_(lateral.weight, gain=0.1)
+                nn.init.zeros_(lateral.bias)
 
         # Initialize trainable weights
         init_weights(self.target_fc1)
@@ -134,8 +176,19 @@ class ProgressiveCritic(nn.Module):
         # Layer 1: target hidden
         h1_target = F.relu(self.target_fc1(x))
 
-        # DIAGNOSTIC: Completely disable laterals to test base network
-        h2_target = F.relu(self.target_fc2(h1_target))
+        if self.use_laterals and self.num_sources > 0:
+            # Get source hidden activations (layer 1) - frozen, no gradients
+            lateral_sum = torch.zeros_like(h1_target)
+            with torch.no_grad():
+                for i, critic in enumerate(self._source_critics):
+                    h1_source = F.relu(critic.fc1(x))
+                    lateral_sum = lateral_sum + self.lateral_fc2[i](h1_source)
+
+            # Layer 2 with lateral connections
+            h2_target = F.relu(self.target_fc2(h1_target) + lateral_sum)
+        else:
+            # No lateral connections - standard forward pass
+            h2_target = F.relu(self.target_fc2(h1_target))
 
         # Output layer
         return self.fc3(h2_target)
@@ -150,18 +203,20 @@ class ProgressiveActorCritic(nn.Module):
     def __init__(self, source_models: List[ActorCritic],
                  obs_dim: int = STANDARDIZED_OBS_DIM,
                  act_dim: int = STANDARDIZED_ACT_DIM,
-                 hidden_dim: int = 128):
+                 hidden_dim: int = 128,
+                 use_laterals: bool = True):
         super().__init__()
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.hidden_dim = hidden_dim
+        self.use_laterals = use_laterals
 
         # Extract actors and critics from source models
         source_actors = [model.actor for model in source_models]
         source_critics = [model.critic for model in source_models]
 
-        self.actor = ProgressiveActor(source_actors, obs_dim, act_dim, hidden_dim)
-        self.critic = ProgressiveCritic(source_critics, obs_dim, hidden_dim)
+        self.actor = ProgressiveActor(source_actors, obs_dim, act_dim, hidden_dim, use_laterals)
+        self.critic = ProgressiveCritic(source_critics, obs_dim, hidden_dim, use_laterals)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass returns (action_logits, value)."""
@@ -203,7 +258,7 @@ class ProgressiveNetworkTrainer:
     """Trainer for Progressive Networks."""
 
     def __init__(self, source_env_names: List[str], target_env_name: str,
-                 config: TrainingConfig = None):
+                 config: TrainingConfig = None, use_laterals: bool = True):
         """
         Initialize progressive network trainer.
 
@@ -211,10 +266,12 @@ class ProgressiveNetworkTrainer:
             source_env_names: List of source environment names
             target_env_name: Target environment name
             config: Training configuration
+            use_laterals: Whether to use lateral connections from source networks
         """
         self.source_env_names = source_env_names
         self.target_env_name = target_env_name
         self.config = config or TrainingConfig()
+        self.use_laterals = use_laterals
 
         # Create target environment
         self.env = create_env(target_env_name)
@@ -228,8 +285,11 @@ class ProgressiveNetworkTrainer:
             source_models,
             obs_dim=STANDARDIZED_OBS_DIM,
             act_dim=STANDARDIZED_ACT_DIM,
-            hidden_dim=self.config.hidden_dim
+            hidden_dim=self.config.hidden_dim,
+            use_laterals=use_laterals
         ).to(DEVICE)
+
+        print(f"Progressive network created with use_laterals={use_laterals}")
 
         # Optimizer (only trains non-frozen parameters)
         # Use same learning rate as Section 1 - zero-initialized laterals won't interfere
@@ -421,7 +481,8 @@ class ProgressiveNetworkTrainer:
 
 
 def train_progressive_network(source_env_names: List[str], target_env_name: str,
-                               config: TrainingConfig = None) -> TrainingStats:
+                               config: TrainingConfig = None,
+                               use_laterals: bool = True) -> TrainingStats:
     """
     Train a progressive network from source environments to target environment.
 
@@ -429,23 +490,28 @@ def train_progressive_network(source_env_names: List[str], target_env_name: str,
         source_env_names: List of source environment names
         target_env_name: Target environment name
         config: Training configuration
+        use_laterals: Whether to use lateral connections from source networks
 
     Returns:
         Training statistics
     """
-    trainer = ProgressiveNetworkTrainer(source_env_names, target_env_name, config)
+    trainer = ProgressiveNetworkTrainer(source_env_names, target_env_name, config, use_laterals)
     stats = trainer.train()
     trainer.env.close()
     return stats
 
 
-def run_section3_experiments(config: TrainingConfig = None) -> dict:
+def run_section3_experiments(config: TrainingConfig = None, use_laterals: bool = True) -> dict:
     """
     Run all Section 3 progressive network experiments.
 
     Experiments:
     1. {Acrobot, MountainCar} -> CartPole
     2. {CartPole, Acrobot} -> MountainCar
+
+    Args:
+        config: Training configuration
+        use_laterals: Whether to use lateral connections (default True)
 
     Returns:
         Dictionary with training statistics for each experiment
@@ -461,6 +527,8 @@ def run_section3_experiments(config: TrainingConfig = None) -> dict:
     except:
         print("\n[Git] Could not get commit info")
 
+    print(f"\n[Config] use_laterals={use_laterals}")
+
     results = {}
 
     # Experiment 1: {Acrobot, MountainCar} -> CartPole
@@ -470,7 +538,8 @@ def run_section3_experiments(config: TrainingConfig = None) -> dict:
     results['acrobot_mountaincar_to_cartpole'] = train_progressive_network(
         ["Acrobot-v1", "MountainCarContinuous-v0"],
         "CartPole-v1",
-        config
+        config,
+        use_laterals
     )
 
     # Experiment 2: {CartPole, Acrobot} -> MountainCar
@@ -480,7 +549,8 @@ def run_section3_experiments(config: TrainingConfig = None) -> dict:
     results['cartpole_acrobot_to_mountaincar'] = train_progressive_network(
         ["CartPole-v1", "Acrobot-v1"],
         "MountainCarContinuous-v0",
-        config
+        config,
+        use_laterals
     )
 
     return results
