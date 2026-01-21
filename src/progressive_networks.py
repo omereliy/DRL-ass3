@@ -27,23 +27,22 @@ class ProgressiveActor(nn.Module):
     Progressive Actor network that combines frozen source networks
     with a trainable target network.
 
-    Architecture:
+    Simplified architecture (adapters are optional per assignment):
     - Source networks are frozen and provide hidden layer features
     - Target network has TWO hidden layers (matching source architecture)
-    - Layer-wise lateral connections: source layer i -> target layer i+1
+    - Direct lateral connections without adapters: source layer i -> target layer i+1
     """
 
     def __init__(self, source_actors: List[nn.Module],
                  obs_dim: int = STANDARDIZED_OBS_DIM,
                  act_dim: int = STANDARDIZED_ACT_DIM,
                  hidden_dim: int = 128,
-                 lateral_scale: float = 0.1):
+                 lateral_scale: float = 0.5):
         super().__init__()
         self.obs_dim = obs_dim
         self.act_dim = act_dim
         self.hidden_dim = hidden_dim
         self.num_sources = len(source_actors)
-        self.lateral_scale = lateral_scale  # Scale down lateral contributions
 
         # Store frozen source actors
         self.source_actors = nn.ModuleList(source_actors)
@@ -55,26 +54,17 @@ class ProgressiveActor(nn.Module):
         self.target_fc1 = nn.Linear(obs_dim, hidden_dim)
         self.target_fc2 = nn.Linear(hidden_dim, hidden_dim)
 
-        # Lateral connections for EACH layer
-        # Layer 1: source fc1 output -> target layer 2 input
-        self.lateral_connections_1 = nn.ModuleList([
-            nn.Linear(hidden_dim, hidden_dim) for _ in range(self.num_sources)
-        ])
-        # Layer 2: source fc2 output -> target output layer input
-        self.lateral_connections_2 = nn.ModuleList([
-            nn.Linear(hidden_dim, hidden_dim) for _ in range(self.num_sources)
-        ])
-
         # Output layer
         self.fc3 = nn.Linear(hidden_dim, act_dim)
+
+        # Learnable lateral scales (one per source, per layer)
+        # Initialize small but learnable
+        self.lateral_scale_1 = nn.Parameter(torch.ones(self.num_sources) * lateral_scale)
+        self.lateral_scale_2 = nn.Parameter(torch.ones(self.num_sources) * lateral_scale)
 
         # Initialize trainable weights
         init_weights(self.target_fc1)
         init_weights(self.target_fc2)
-        for lateral in self.lateral_connections_1:
-            init_weights(lateral)
-        for lateral in self.lateral_connections_2:
-            init_weights(lateral)
         init_weights(self.fc3)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -82,28 +72,22 @@ class ProgressiveActor(nn.Module):
         # Layer 1: target hidden
         h1_target = F.relu(self.target_fc1(x))
 
-        # Lateral connections from source layer 1
+        # Direct lateral connections from source layer 1 (no adapters)
         lateral_1 = torch.zeros_like(h1_target)
-        for source_actor, lateral in zip(self.source_actors, self.lateral_connections_1):
+        for i, source_actor in enumerate(self.source_actors):
             with torch.no_grad():
                 source_h1 = F.relu(source_actor.fc1(x))
-            lateral_1 = lateral_1 + F.relu(lateral(source_h1))
-        # Scale down lateral contributions to let target learn independently
-        if self.num_sources > 0:
-            lateral_1 = lateral_1 * self.lateral_scale / self.num_sources
+            lateral_1 = lateral_1 + self.lateral_scale_1[i] * source_h1
 
         # Layer 2: combine target h1 with lateral from source layer 1
         h2_target = F.relu(self.target_fc2(h1_target + lateral_1))
 
-        # Lateral connections from source layer 2
+        # Direct lateral connections from source layer 2 (no adapters)
         lateral_2 = torch.zeros_like(h2_target)
-        for source_actor, lateral in zip(self.source_actors, self.lateral_connections_2):
+        for i, source_actor in enumerate(self.source_actors):
             with torch.no_grad():
-                source_h2 = source_actor.get_hidden(x)  # Returns relu(fc2(relu(fc1(x))))
-            lateral_2 = lateral_2 + F.relu(lateral(source_h2))
-        # Scale down lateral contributions
-        if self.num_sources > 0:
-            lateral_2 = lateral_2 * self.lateral_scale / self.num_sources
+                source_h2 = source_actor.get_hidden(x)
+            lateral_2 = lateral_2 + self.lateral_scale_2[i] * source_h2
 
         # Output layer: combine target h2 with lateral from source layer 2
         return self.fc3(h2_target + lateral_2)
@@ -119,21 +103,20 @@ class ProgressiveCritic(nn.Module):
     Progressive Critic network that combines frozen source networks
     with a trainable target network.
 
-    Architecture:
+    Simplified architecture (adapters are optional per assignment):
     - Source networks are frozen and provide hidden layer features
     - Target network has TWO hidden layers (matching source architecture)
-    - Layer-wise lateral connections: source layer i -> target layer i+1
+    - Direct lateral connections without adapters: source layer i -> target layer i+1
     """
 
     def __init__(self, source_critics: List[nn.Module],
                  obs_dim: int = STANDARDIZED_OBS_DIM,
                  hidden_dim: int = 128,
-                 lateral_scale: float = 0.1):
+                 lateral_scale: float = 0.5):
         super().__init__()
         self.obs_dim = obs_dim
         self.hidden_dim = hidden_dim
         self.num_sources = len(source_critics)
-        self.lateral_scale = lateral_scale  # Scale down lateral contributions
 
         # Store frozen source critics
         self.source_critics = nn.ModuleList(source_critics)
@@ -145,26 +128,16 @@ class ProgressiveCritic(nn.Module):
         self.target_fc1 = nn.Linear(obs_dim, hidden_dim)
         self.target_fc2 = nn.Linear(hidden_dim, hidden_dim)
 
-        # Lateral connections for EACH layer
-        # Layer 1: source fc1 output -> target layer 2 input
-        self.lateral_connections_1 = nn.ModuleList([
-            nn.Linear(hidden_dim, hidden_dim) for _ in range(self.num_sources)
-        ])
-        # Layer 2: source fc2 output -> target output layer input
-        self.lateral_connections_2 = nn.ModuleList([
-            nn.Linear(hidden_dim, hidden_dim) for _ in range(self.num_sources)
-        ])
-
         # Output layer
         self.fc3 = nn.Linear(hidden_dim, 1)
+
+        # Learnable lateral scales (one per source, per layer)
+        self.lateral_scale_1 = nn.Parameter(torch.ones(self.num_sources) * lateral_scale)
+        self.lateral_scale_2 = nn.Parameter(torch.ones(self.num_sources) * lateral_scale)
 
         # Initialize trainable weights
         init_weights(self.target_fc1)
         init_weights(self.target_fc2)
-        for lateral in self.lateral_connections_1:
-            init_weights(lateral)
-        for lateral in self.lateral_connections_2:
-            init_weights(lateral)
         init_weights(self.fc3)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -172,28 +145,22 @@ class ProgressiveCritic(nn.Module):
         # Layer 1: target hidden
         h1_target = F.relu(self.target_fc1(x))
 
-        # Lateral connections from source layer 1
+        # Direct lateral connections from source layer 1 (no adapters)
         lateral_1 = torch.zeros_like(h1_target)
-        for source_critic, lateral in zip(self.source_critics, self.lateral_connections_1):
+        for i, source_critic in enumerate(self.source_critics):
             with torch.no_grad():
                 source_h1 = F.relu(source_critic.fc1(x))
-            lateral_1 = lateral_1 + F.relu(lateral(source_h1))
-        # Scale down lateral contributions to let target learn independently
-        if self.num_sources > 0:
-            lateral_1 = lateral_1 * self.lateral_scale / self.num_sources
+            lateral_1 = lateral_1 + self.lateral_scale_1[i] * source_h1
 
         # Layer 2: combine target h1 with lateral from source layer 1
         h2_target = F.relu(self.target_fc2(h1_target + lateral_1))
 
-        # Lateral connections from source layer 2
+        # Direct lateral connections from source layer 2 (no adapters)
         lateral_2 = torch.zeros_like(h2_target)
-        for source_critic, lateral in zip(self.source_critics, self.lateral_connections_2):
+        for i, source_critic in enumerate(self.source_critics):
             with torch.no_grad():
-                source_h2 = source_critic.get_hidden(x)  # Returns relu(fc2(relu(fc1(x))))
-            lateral_2 = lateral_2 + F.relu(lateral(source_h2))
-        # Scale down lateral contributions
-        if self.num_sources > 0:
-            lateral_2 = lateral_2 * self.lateral_scale / self.num_sources
+                source_h2 = source_critic.get_hidden(x)
+            lateral_2 = lateral_2 + self.lateral_scale_2[i] * source_h2
 
         # Output layer: combine target h2 with lateral from source layer 2
         return self.fc3(h2_target + lateral_2)
@@ -290,8 +257,10 @@ class ProgressiveNetworkTrainer:
         ).to(DEVICE)
 
         # Optimizer (only trains non-frozen parameters)
+        # Use lower learning rate for progressive networks for stability
         trainable_params = [p for p in self.model.parameters() if p.requires_grad]
-        self.optimizer = optim.Adam(trainable_params, lr=self.config.lr_actor)
+        progressive_lr = self.config.lr_actor * 0.3  # 3e-4 if default is 1e-3
+        self.optimizer = optim.Adam(trainable_params, lr=progressive_lr)
 
         # Statistics
         self.stats = TrainingStats()
