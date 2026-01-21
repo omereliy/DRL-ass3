@@ -73,25 +73,12 @@ class ProgressiveActor(nn.Module):
         # Layer 1: target hidden
         h1_target = F.relu(self.target_fc1(x))
 
-        # Direct lateral connections from source layer 1 (no adapters)
-        lateral_1 = torch.zeros_like(h1_target)
-        for i, source_actor in enumerate(self.source_actors):
-            with torch.no_grad():
-                source_h1 = F.relu(source_actor.fc1(x))
-            lateral_1 = lateral_1 + self.lateral_scale_1[i] * source_h1
+        # DIAGNOSTIC: Completely disable laterals to test base network
+        # Just use standard forward pass without any lateral connections
+        h2_target = F.relu(self.target_fc2(h1_target))
 
-        # Layer 2: combine target h1 with lateral from source layer 1
-        h2_target = F.relu(self.target_fc2(h1_target + lateral_1))
-
-        # Direct lateral connections from source layer 2 (no adapters)
-        lateral_2 = torch.zeros_like(h2_target)
-        for i, source_actor in enumerate(self.source_actors):
-            with torch.no_grad():
-                source_h2 = source_actor.get_hidden(x)
-            lateral_2 = lateral_2 + self.lateral_scale_2[i] * source_h2
-
-        # Output layer: combine target h2 with lateral from source layer 2
-        return self.fc3(h2_target + lateral_2)
+        # Output layer
+        return self.fc3(h2_target)
 
     def get_hidden(self, x: torch.Tensor) -> torch.Tensor:
         """Get target hidden layer activations (after both hidden layers)."""
@@ -147,25 +134,11 @@ class ProgressiveCritic(nn.Module):
         # Layer 1: target hidden
         h1_target = F.relu(self.target_fc1(x))
 
-        # Direct lateral connections from source layer 1 (no adapters)
-        lateral_1 = torch.zeros_like(h1_target)
-        for i, source_critic in enumerate(self.source_critics):
-            with torch.no_grad():
-                source_h1 = F.relu(source_critic.fc1(x))
-            lateral_1 = lateral_1 + self.lateral_scale_1[i] * source_h1
+        # DIAGNOSTIC: Completely disable laterals to test base network
+        h2_target = F.relu(self.target_fc2(h1_target))
 
-        # Layer 2: combine target h1 with lateral from source layer 1
-        h2_target = F.relu(self.target_fc2(h1_target + lateral_1))
-
-        # Direct lateral connections from source layer 2 (no adapters)
-        lateral_2 = torch.zeros_like(h2_target)
-        for i, source_critic in enumerate(self.source_critics):
-            with torch.no_grad():
-                source_h2 = source_critic.get_hidden(x)
-            lateral_2 = lateral_2 + self.lateral_scale_2[i] * source_h2
-
-        # Output layer: combine target h2 with lateral from source layer 2
-        return self.fc3(h2_target + lateral_2)
+        # Output layer
+        return self.fc3(h2_target)
 
 
 class ProgressiveActorCritic(nn.Module):
@@ -477,6 +450,17 @@ def run_section3_experiments(config: TrainingConfig = None) -> dict:
     Returns:
         Dictionary with training statistics for each experiment
     """
+    # Print git commit for version verification
+    import subprocess
+    try:
+        commit = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'],
+                                         stderr=subprocess.DEVNULL).decode().strip()
+        commit_msg = subprocess.check_output(['git', 'log', '-1', '--pretty=%s'],
+                                             stderr=subprocess.DEVNULL).decode().strip()
+        print(f"\n[Git] Running commit: {commit} - {commit_msg}")
+    except:
+        print("\n[Git] Could not get commit info")
+
     results = {}
 
     # Experiment 1: {Acrobot, MountainCar} -> CartPole
