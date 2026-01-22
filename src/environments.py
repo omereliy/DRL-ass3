@@ -46,9 +46,9 @@ ENV_CONFIGS = {
     "MountainCarContinuous-v0": EnvConfig(
         name="MountainCarContinuous-v0",
         original_obs_dim=2,
-        original_act_dim=3,  # Discretized: left, nothing, right
+        original_act_dim=2,  # Discretized: left, right (no no-op to prevent reward hacking)
         is_continuous=True,  # Original is continuous
-        convergence_threshold=0.0,  # Achievable with 3 discrete actions (original 90.0 too high)
+        convergence_threshold=0.0,  # Achievable with 2 discrete actions
         max_steps=999,
         description="Drive up a steep mountain"
     ),
@@ -88,8 +88,8 @@ class StandardizedEnv:
         # For continuous action spaces, we discretize
         if self.is_continuous:
             # MountainCarContinuous: action in [-1, 1]
-            # Discretize to: left (-1), nothing (0), right (1)
-            self.discrete_actions = [-1.0, 0.0, 1.0]
+            # Discretize to: left (-1), right (1) - no no-op to prevent reward hacking
+            self.discrete_actions = [-1.0, 1.0]
 
         # Reward shaping state for MountainCarContinuous
         self._max_position = -float('inf')
