@@ -73,9 +73,9 @@ class ProgressiveActor(nn.Module):
                 nn.init.zeros_(lateral.bias)
 
             # Learnable scaling factor for lateral contributions
-            # Starts at 0 so network first learns like standard ActorCritic,
-            # then can optionally incorporate lateral knowledge if helpful
-            self.lateral_scale = nn.Parameter(torch.tensor(0.0))
+            # Initialize to small positive value so laterals contribute from start
+            # Per paper: adapters use learned scalars initialized to small values
+            self.lateral_scale = nn.Parameter(torch.tensor(0.1))
 
         # Initialize trainable weights
         init_weights(self.target_fc1)
@@ -83,7 +83,13 @@ class ProgressiveActor(nn.Module):
         init_weights(self.fc3)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass with progressive network architecture."""
+        """Forward pass with progressive network architecture.
+
+        Per Rusu et al. 2016:
+        h_i^(k) = f(W_i^(k) * h_{i-1}^(k) + Σ U_i^(k:j) * h_{i-1}^(j))
+
+        Key: ReLU is applied AFTER combining target layer with lateral connections.
+        """
         # Layer 1: target hidden
         h1_target = F.relu(self.target_fc1(x))
 
@@ -101,11 +107,10 @@ class ProgressiveActor(nn.Module):
             for i, h1_source in enumerate(source_h1s):
                 lateral_sum = lateral_sum + self.lateral_fc2[i](h1_source)
 
-            # RESIDUAL-STYLE LATERALS: Apply ReLU to target first, then add laterals
-            # This prevents dead ReLU problem by ensuring target network can always
-            # produce non-zero outputs, regardless of lateral contributions
-            h2_base = F.relu(self.target_fc2(h1_target))
-            h2_target = h2_base + self.lateral_scale * lateral_sum
+            # Per paper: h2 = f(W2 * h1_target + lateral_sum)
+            # ReLU applied AFTER combining target with laterals
+            h2_pre_activation = self.target_fc2(h1_target) + self.lateral_scale * lateral_sum
+            h2_target = F.relu(h2_pre_activation)
         else:
             # No lateral connections - standard forward pass
             h2_target = F.relu(self.target_fc2(h1_target))
@@ -180,9 +185,9 @@ class ProgressiveCritic(nn.Module):
                 nn.init.zeros_(lateral.bias)
 
             # Learnable scaling factor for lateral contributions
-            # Starts at 0 so network first learns like standard ActorCritic,
-            # then can optionally incorporate lateral knowledge if helpful
-            self.lateral_scale = nn.Parameter(torch.tensor(0.0))
+            # Initialize to small positive value so laterals contribute from start
+            # Per paper: adapters use learned scalars initialized to small values
+            self.lateral_scale = nn.Parameter(torch.tensor(0.1))
 
         # Initialize trainable weights
         init_weights(self.target_fc1)
@@ -190,7 +195,13 @@ class ProgressiveCritic(nn.Module):
         init_weights(self.fc3)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass with progressive network architecture."""
+        """Forward pass with progressive network architecture.
+
+        Per Rusu et al. 2016:
+        h_i^(k) = f(W_i^(k) * h_{i-1}^(k) + Σ U_i^(k:j) * h_{i-1}^(j))
+
+        Key: ReLU is applied AFTER combining target layer with lateral connections.
+        """
         # Layer 1: target hidden
         h1_target = F.relu(self.target_fc1(x))
 
@@ -208,11 +219,10 @@ class ProgressiveCritic(nn.Module):
             for i, h1_source in enumerate(source_h1s):
                 lateral_sum = lateral_sum + self.lateral_fc2[i](h1_source)
 
-            # RESIDUAL-STYLE LATERALS: Apply ReLU to target first, then add laterals
-            # This prevents dead ReLU problem by ensuring target network can always
-            # produce non-zero outputs, regardless of lateral contributions
-            h2_base = F.relu(self.target_fc2(h1_target))
-            h2_target = h2_base + self.lateral_scale * lateral_sum
+            # Per paper: h2 = f(W2 * h1_target + lateral_sum)
+            # ReLU applied AFTER combining target with laterals
+            h2_pre_activation = self.target_fc2(h1_target) + self.lateral_scale * lateral_sum
+            h2_target = F.relu(h2_pre_activation)
         else:
             # No lateral connections - standard forward pass
             h2_target = F.relu(self.target_fc2(h1_target))
